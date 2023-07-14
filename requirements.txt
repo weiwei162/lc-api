@@ -1,0 +1,8 @@
+langchain-serve
+langchain
+openai
+pycryptodome
+SQLAlchemy
+PyMySQL
+psycopg2
+cx_Oracle
