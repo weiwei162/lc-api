@@ -6,3 +6,4 @@ SQLAlchemy
 PyMySQL
 psycopg2
 cx_Oracle
+pandas
