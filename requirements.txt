@@ -1,4 +1,4 @@
-langchain-serve
+bentoml
 langchain
 openai
 pycryptodome

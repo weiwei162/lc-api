@@ -6,7 +6,7 @@ from langchain import SQLDatabase
 from langchain.chains import SQLDatabaseSequentialChain
 from langchain.callbacks.manager import CallbackManagerForChainRun
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import pandas as pd
 from chain.nc import get_db_uri
 
@@ -50,23 +50,23 @@ class SqlChain(Chain):
 
         db = SQLDatabase.from_uri(
             uri,
-            {'echo': True},
+            # {'echo': True},
             # sample_rows_in_table_info=0
         )
         db_chain = SQLDatabaseSequentialChain.from_llm(
             self.llm,
             db,
-            verbose=True,
             return_intermediate_steps=True,
             top_k=10
         )
         response = db_chain(inputs[self.input_key], callbacks=_run_manager.get_child(),
                             return_only_outputs=True)
 
-        sql = response['intermediate_steps'][1]
-        engine = create_engine(uri, echo=True)
+        response['sql'] = response['intermediate_steps'][1]
+        del response['intermediate_steps']
+        engine = create_engine(uri)
         with engine.connect() as conn:
-            df = pd.read_sql_query(sql, conn)
+            df = pd.read_sql_query(text(response['sql']), conn)
             response['data'] = df.to_dict('records')
 
         return response
