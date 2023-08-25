@@ -1,8 +1,12 @@
 import bentoml
 import os
 
-from langchain import OpenAI
+from langchain.chat_models import ChatOpenAI
 from core.lc.SqlChain import SqlChain
+from core.lc.SqlAgent import SqlAgent
+from core.lc.SqlToolPyplot import SqlToolPyplot
+from core.lc.SqlTool import SqlTool
+from core.lc.PandasAgent import PandasAgent
 
 import langchain
 from langchain.cache import InMemoryCache
@@ -17,8 +21,8 @@ svc = bentoml.Service("lc")
 
 
 @svc.api(input=bentoml.io.JSON(), output=bentoml.io.JSON())
-def completion_messages(inputs: dict) -> dict:
-    llm = OpenAI(
+def completion_messages(req: dict) -> dict:
+    llm = ChatOpenAI(
         verbose=True,
         temperature=0,
         engine="gpt-35-turbo-16k",
@@ -29,8 +33,10 @@ def completion_messages(inputs: dict) -> dict:
         #     "Helicone-Cache-Enabled": "true"
         # }
     )
-    db_chain = SqlChain.from_llm(llm, inputs['inputs']['ds_id'])
-    response = db_chain.invoke({"question": inputs['query']})
+    inputs = req['inputs']
+    db_chain = PandasAgent.from_llm(
+        llm, inputs['ds_id'], inputs['include_tables'].split(','))
+    response = db_chain.invoke({"input": req['query']})
     return response
 
 

@@ -1,4 +1,7 @@
+from typing import List, Optional
+
 from langchain.prompts.prompt import PromptTemplate
+from langchain.schema.output_parser import StrOutputParser
 from langchain.output_parsers.list import CommaSeparatedListOutputParser
 from langchain.schema.runnable import RunnableMap
 from operator import itemgetter
@@ -19,29 +22,31 @@ Pay attention to use only the column names that you can see in the schema descri
 
 Use the following format:
 
-Question: Question here
-SQLQuery: SQL Query to run
-SQLResult: Result of the SQLQuery
-Answer: Final answer here
+Question: "Question here"
+SQLQuery: "SQL Query to run"
+SQLResult: "Result of the SQLQuery"
+Answer: "Final answer here"
+
+Only use the following tables:
 
 {table_info}
 
 Question: {input}"""
+
 PROMPT = PromptTemplate.from_template(_DEFAULT_TEMPLATE)
 
 _DECIDER_TEMPLATE = """Given the below input question and list of potential tables, output a comma separated list of the table names that may be necessary to answer this question.
-
-Question: {query}
-
+Question: {question}
 Table Names: {table_names}
-
 Relevant Table Names:"""
+
 DECIDER_PROMPT = PromptTemplate.from_template(_DECIDER_TEMPLATE)
 
-final_prompt_template = """Based on the table schema below, question, sql query, and sql response, write a natural language response in Chinese:
+final_prompt_template = """Based on below input question, sql query, and sql response, write a natural language response in Chinese:
 Question: {question}
 SQL Query: {query}
 SQL Response: {response}"""
+
 final_prompt = PromptTemplate.from_template(final_prompt_template)
 
 
@@ -56,6 +61,7 @@ class SqlChain():
     def from_llm(
         llm: BaseLanguageModel,
         ds_id: str,
+        include_tables: Optional[List[str]] = None,
         k: int = 5,
     ) -> any:
         uri = get_db_uri(ds_id)
@@ -63,36 +69,37 @@ class SqlChain():
         db = SQLDatabase.from_uri(
             uri,
             # {'echo': True},
+            include_tables=include_tables,
             # sample_rows_in_table_info=0
+            view_support=True,
         )
 
         _table_names = db.get_usable_table_names()
         table_names = ", ".join(_table_names)
 
-        table_names_from_chain = {"query": itemgetter(
-            "question"), "table_names": lambda _: table_names} | DECIDER_PROMPT | llm | CommaSeparatedListOutputParser()
+        table_names_from_chain = {"question": itemgetter(
+            "input"), "table_names": lambda _: table_names} | DECIDER_PROMPT | llm | CommaSeparatedListOutputParser()
 
         inputs = {
-            "input": lambda x: x["question"] + "\nSQLQuery: ",
+            "input": lambda x: x["input"] + "\nSQLQuery: ",
             "top_k": lambda _: k,
-            "table_info": lambda x: db.get_table_info(
-                table_names=x.get("table_names_to_use")
-            ),
+            "table_info": lambda x: db.get_table_info(table_names=x.get("table_names_to_use")),
             "dialect": lambda _: db.dialect
         }
 
-        sql_response = inputs | PROMPT | llm.bind(stop=["\nSQLResult:"])
+        sql_response = inputs | PROMPT | llm.bind(
+            stop=["\nSQLResult:"]) | StrOutputParser()
 
-        final_result = {"question": itemgetter("question"), "query": itemgetter(
-            "query"), "response": lambda x: db.run(x["query"])} | final_prompt | llm
+        final_result = {"question": itemgetter("input"), "query": itemgetter(
+            "query"), "response": lambda x: db.run(x["query"])} | final_prompt | llm | StrOutputParser()
 
         return (
             RunnableMap({
-                "question": itemgetter("question"),
+                "input": itemgetter("input"),
                 "table_names_to_use": table_names_from_chain,
             })
             | RunnableMap({
-                "question": itemgetter("question"),
+                "input": itemgetter("input"),
                 "query": sql_response,
             })
             | RunnableMap({
